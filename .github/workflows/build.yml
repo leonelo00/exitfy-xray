@@ -13,16 +13,17 @@ jobs:
       - name: Set up Go
         uses: actions/setup-go@v5
         with:
-          go-version: '1.23'
+          go-version: '1.22.12'
 
       - name: Set up Android NDK
         uses: nttld/setup-ndk@v1
         with:
           ndk-version: r26b
 
-      - name: Download Go dependencies
+      - name: Resolve Dependencies
         run: |
-          go get github.com/xtls/xray-core@v26.9.9 || go get github.com/xtls/xray-core@main
+          go mod edit -require github.com/xtls/xray-core@v1.8.24 || true
+          go get github.com/xtls/xray-core@main
           go mod tidy
 
       - name: Compile libvless.so (arm64-v8a)
@@ -31,7 +32,15 @@ jobs:
           export CC=$TOOLCHAIN/bin/aarch64-linux-android26-clang
           
           CGO_ENABLED=1 GOOS=android GOARCH=arm64 \
-          go build -trimpath -ldflags="-s -w" -buildmode=c-shared -o libvless.so main.go
+          go build -trimpath \
+            -ldflags="-s -w -extldflags '-Wl,-soname,libvless.so'" \
+            -buildmode=c-shared \
+            -o libvless.so main.go
+
+      - name: Verify ELF binary
+        run: |
+          file libvless.so
+          ls -lh libvless.so
 
       - name: Upload Artifact
         uses: actions/upload-artifact@v4
