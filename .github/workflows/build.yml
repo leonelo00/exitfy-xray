@@ -1,7 +1,12 @@
-name: Build libvless.so
+name: Build and Release libvless.so
 
 on:
-  workflow_dispatch:
+  workflow_dispatch: # Возможность запустить вручную в любой момент
+  schedule:
+    - cron: '0 3 * * *' # Проверка и сборка каждую ночь в 03:00 UTC
+
+permissions:
+  contents: write
 
 jobs:
   build-arm64:
@@ -42,8 +47,11 @@ jobs:
             -buildmode=c-shared \
             -o libvless.so main.go
 
-      - name: Upload Artifact
-        uses: actions/upload-artifact@v4
+      - name: Publish to GitHub Releases
+        uses: softprops/action-gh-release@v2
         with:
-          name: libvless-arm64
-          path: libvless.so
+          tag_name: latest
+          name: Latest libvless core
+          draft: false
+          prerelease: false
+          files: libvless.so
