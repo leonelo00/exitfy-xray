@@ -9,34 +9,57 @@ permissions:
   contents: write
 
 jobs:
-  build-arm64:
+  check-and-build:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
 
+      - name: Get latest upstream Xray release tag
+        id: upstream
+        run: |
+          UPSTREAM_TAG=$(curl -s https://api.github.com/repos/XTLS/Xray-core/releases/latest | jq -r .tag_name)
+          echo "tag=$UPSTREAM_TAG" >> $GITHUB_OUTPUT
+
+      - name: Check if release already exists in my repo
+        id: check_release
+        run: |
+          HTTP_STATUS=$(curl -s -o /dev/null -w "%{http_code}" https://api.github.com/repos/${{ github.repository }}/releases/tags/${{ steps.upstream.outputs.tag }})
+          if [ "$HTTP_STATUS" -eq "200" ]; then
+            echo "exists=true" >> $GITHUB_OUTPUT
+            echo "Release ${{ steps.upstream.outputs.tag }} already built. Skipping."
+          else
+            echo "exists=false" >> $GITHUB_OUTPUT
+            echo "New upstream release detected: ${{ steps.upstream.outputs.tag }}"
+          fi
+
       - name: Set up Go
+        if: steps.check_release.outputs.exists == 'false' || github.event_name == 'workflow_dispatch'
         uses: actions/setup-go@v5
         with:
           go-version: '1.22'
 
       - name: Set up Android NDK
+        if: steps.check_release.outputs.exists == 'false' || github.event_name == 'workflow_dispatch'
         uses: nttld/setup-ndk@v1
         with:
           ndk-version: r26b
 
       - name: Download Go dependencies
+        if: steps.check_release.outputs.exists == 'false' || github.event_name == 'workflow_dispatch'
         run: |
-          go get github.com/xtls/xray-core@main
+          go get github.com/xtls/xray-core@${{ steps.upstream.outputs.tag }}
           go mod tidy
 
       - name: Patch anet zoneCache bug
+        if: steps.check_release.outputs.exists == 'false' || github.event_name == 'workflow_dispatch'
         run: |
           ANET_DIR=$(go env GOPATH)/pkg/mod/github.com/wlynxg/anet*
           chmod -R +w $ANET_DIR || true
           find $ANET_DIR -name "*.go" -exec sed -i '/net\.zoneCache/d' {} + || true
 
       - name: Compile libvless.so (arm64-v8a)
+        if: steps.check_release.outputs.exists == 'false' || github.event_name == 'workflow_dispatch'
         run: |
           export TOOLCHAIN=$ANDROID_NDK_ROOT/toolchains/llvm/prebuilt/linux-x86_64
           export CC=$TOOLCHAIN/bin/aarch64-linux-android26-clang
@@ -47,15 +70,12 @@ jobs:
             -buildmode=c-shared \
             -o libvless.so main.go
 
-      - name: Generate release tag
-        id: tag
-        run: echo "release_tag=v$(date +'%Y.%m.%d')-${{ github.run_number }}" >> $GITHUB_OUTPUT
-
       - name: Publish to GitHub Releases
+        if: steps.check_release.outputs.exists == 'false' || github.event_name == 'workflow_dispatch'
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: ${{ steps.tag.outputs.release_tag }}
-          name: Release ${{ steps.tag.outputs.release_tag }}
+          tag_name: ${{ steps.upstream.outputs.tag }}
+          name: Xray-core ${{ steps.upstream.outputs.tag }}
           make_latest: true
           draft: false
           prerelease: false
