@@ -1,9 +1,9 @@
 name: Build and Release libvless.so
 
 on:
-  workflow_dispatch: # Возможность запустить вручную в любой момент
+  workflow_dispatch:
   schedule:
-    - cron: '0 3 * * *' # Проверка и сборка каждую ночь в 03:00 UTC
+    - cron: '0 3 * * *'
 
 permissions:
   contents: write
@@ -47,11 +47,16 @@ jobs:
             -buildmode=c-shared \
             -o libvless.so main.go
 
+      - name: Generate release tag
+        id: tag
+        run: echo "release_tag=v$(date +'%Y.%m.%d')-${{ github.run_number }}" >> $GITHUB_OUTPUT
+
       - name: Publish to GitHub Releases
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: latest
-          name: Latest libvless core
+          tag_name: ${{ steps.tag.outputs.release_tag }}
+          name: Release ${{ steps.tag.outputs.release_tag }}
+          make_latest: true
           draft: false
           prerelease: false
           files: libvless.so
